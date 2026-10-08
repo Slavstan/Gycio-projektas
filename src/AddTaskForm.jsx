@@ -6,18 +6,22 @@ function AddTaskForm({ onAddTask }) {
   const [title, setTitle] = useState("");
   const [deadline, setDeadline] = useState("");
   const [status, setStatus] = useState("Nepradėta");
+  const [isSaving, setIsSaving] = useState(false);
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
 
     const newTask = {
-      id: Date.now(),
       title,
       status,
       deadline,
     };
 
-    onAddTask(newTask);
+    setIsSaving(true);
+    const wasSaved = await onAddTask(newTask);
+    setIsSaving(false);
+
+    if (!wasSaved) return;
 
     setTitle("");
     setDeadline("");
@@ -107,12 +111,13 @@ function AddTaskForm({ onAddTask }) {
               type="button"
               className="add-task__cancel"
               onClick={handleCancel}
+              disabled={isSaving}
             >
               Atšaukti
             </button>
 
-            <button type="submit" className="add-task__submit">
-              Pridėti užduotį
+            <button type="submit" className="add-task__submit" disabled={isSaving}>
+              {isSaving ? "Saugoma..." : "Pridėti užduotį"}
             </button>
           </div>
         </form>

@@ -12,7 +12,8 @@ function getInitials(name = "") {
 function Profile({ user = {}, tasks = [] }) {
   const safeTasks = Array.isArray(tasks) ? tasks : [];
   const name = user?.name || user?.username || "Flowly naudotojas";
-  const email = user?.email || "Nenurodytas";
+  const username = user?.username || "Nenurodytas";
+  const email = user?.email;
   const completedTasks = safeTasks.filter(
     (task) => task?.status === "Atlikta",
   ).length;
@@ -29,7 +30,7 @@ function Profile({ user = {}, tasks = [] }) {
         <div className="profile-header__details">
           <p className="profile-eyebrow">Flowly naudotojas</p>
           <h1>{name}</h1>
-          <p className="profile-email">{email}</p>
+          <p className="profile-email">Vartotojo vardas: {username}</p>
         </div>
       </header>
 
@@ -75,13 +76,15 @@ function Profile({ user = {}, tasks = [] }) {
 
         <dl className="profile-account__details">
           <div>
-            <dt>Vardas</dt>
+            <dt>Vartotojo vardas</dt>
             <dd>{name}</dd>
           </div>
-          <div>
-            <dt>El. paštas</dt>
-            <dd>{email}</dd>
-          </div>
+          {email && (
+            <div>
+              <dt>El. paštas</dt>
+              <dd>{email}</dd>
+            </div>
+          )}
         </dl>
 
         <button className="profile-edit-button" type="button" disabled>

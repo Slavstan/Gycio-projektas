@@ -1,68 +1,148 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import TaskList from "./TaskList";
 import ProgressBar from "./ProgressBar";
 import Navbar from "./Navbar";
 import AddTaskForm from "./AddTaskForm";
 import Profile from "./Profile";
+import {
+  authenticateUser,
+  createTask,
+  getTasks,
+  registerUser,
+  updateTask,
+} from "./taskApi";
 import "./App.css";
 
 function App() {
-  const user = {
-    name: "Jonas Jonaitis",
-    email: "jonas@flowly.lt",
-  };
-
   const [activePage, setActivePage] = useState("home");
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [user, setUser] = useState(null);
   const [loginError, setLoginError] = useState("");
 
-  const [tasks, setTasks] = useState([
-    {
-      id: 1,
-      title: "Sukurti prisijungimo formą",
-      status: "Atlikta",
-      deadline: "2026-10-01",
-    },
-    {
-      id: 2,
-      title: "Sukurti užduočių sąrašą",
-      status: "Vykdoma",
-      deadline: "2026-10-05",
-    },
-  ]);
+  const [tasks, setTasks] = useState([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
+  const [apiError, setApiError] = useState("");
 
-  function handleSubmit(event) {
+  useEffect(() => {
+    if (!isLoggedIn || !user?.username) return undefined;
+
+    let isCurrent = true;
+    setTasksLoading(true);
+    setApiError("");
+
+    getTasks(user.username)
+      .then((loadedTasks) => {
+        if (isCurrent) setTasks(loadedTasks);
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setApiError("Nepavyko įkelti užduočių iš API. Bandykite dar kartą.");
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setTasksLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [isLoggedIn, user?.username]);
+
+  async function handleSubmit(event) {
     event.preventDefault();
+    setIsAuthenticating(true);
+    setLoginError("");
 
-    if (email === "admin" && password === "admin") {
+    try {
+      if (isRegistering) {
+        const registeredUser = await registerUser(username, password);
+        setUser({ username: registeredUser.username || username.trim() });
+      } else {
+        const authenticatedUser = await authenticateUser(username, password);
+
+        if (!authenticatedUser) {
+          setLoginError("Neteisingas vartotojo vardas arba slaptažodis.");
+          return;
+        }
+
+        setUser({ username: authenticatedUser.username });
+      }
+
       setIsLoggedIn(true);
-      setLoginError("");
-      return;
+      setPassword("");
+    } catch (error) {
+      setLoginError(
+        error.message || "Nepavyko susisiekti su prisijungimo API.",
+      );
+    } finally {
+      setIsAuthenticating(false);
     }
-
-    setLoginError("Neteisingas vartotojo vardas arba slaptažodis.");
   }
 
-  function handleAddTask(newTask) {
-    setTasks((currentTasks) => [...currentTasks, newTask]);
+  function handleLogout() {
+    setIsLoggedIn(false);
+    setUser(null);
+    setUsername("");
+    setPassword("");
+    setTasks([]);
+    setTasksLoading(true);
+    setApiError("");
+    setLoginError("");
+    setIsRegistering(false);
+    setActivePage("home");
+  }
+
+  async function handleAddTask(newTask) {
+    try {
+      setApiError("");
+      const createdTask = await createTask({
+        ...newTask,
+        username: user.username,
+      });
+      setTasks((currentTasks) => [...currentTasks, createdTask]);
+      return true;
+    } catch {
+      setApiError("Nepavyko išsaugoti užduoties. Bandykite dar kartą.");
+      return false;
+    }
+  }
+
+  async function handleTaskChange(taskId, changes) {
+    try {
+      setApiError("");
+      const currentTask = tasks.find(
+        (task) => String(task.id) === String(taskId),
+      );
+
+      if (!currentTask) return;
+
+      await updateTask(taskId, {
+        title: currentTask.title,
+        status: currentTask.status,
+        deadline: currentTask.deadline,
+        username: currentTask.username,
+        ...changes,
+      });
+      setTasks((currentTasks) =>
+        currentTasks.map((task) =>
+          String(task.id) === String(taskId) ? { ...task, ...changes } : task,
+        ),
+      );
+    } catch {
+      setApiError("Nepavyko atnaujinti užduoties. Bandykite dar kartą.");
+    }
   }
 
   function handleTaskStatusChange(taskId, status) {
-    setTasks((currentTasks) =>
-      currentTasks.map((task) =>
-        task.id === taskId ? { ...task, status } : task,
-      ),
-    );
+    handleTaskChange(taskId, { status });
   }
 
   function handleTaskDeadlineChange(taskId, deadline) {
-    setTasks((currentTasks) =>
-      currentTasks.map((task) =>
-        task.id === taskId ? { ...task, deadline } : task,
-      ),
-    );
+    handleTaskChange(taskId, { deadline });
   }
 
   const today = new Date();
@@ -86,7 +166,14 @@ function App() {
           {isLoggedIn && (
             <header className="welcome-message">
               <h1>Sveiki sugrįžę!</h1>
-              <p>Prisijungėte kaip admin.</p>
+              <p>Prisijungėte kaip {user?.username}.</p>
+              <button
+                type="button"
+                className="logout-button"
+                onClick={handleLogout}
+              >
+                Atsijungti
+              </button>
             </header>
           )}
 
@@ -96,7 +183,11 @@ function App() {
                 <>
                   <header className="login-card__header">
                     <h1>Prisijungti</h1>
-                    <p>Įveskite savo duomenis, kad tęstumėte</p>
+                    <p>
+                      {isRegistering
+                        ? "Sukurkite paskyrą, kad pradėtumėte"
+                        : "Įveskite savo duomenis, kad tęstumėte"}
+                    </p>
                   </header>
 
                   <form className="login-form" onSubmit={handleSubmit}>
@@ -107,8 +198,8 @@ function App() {
                         name="username"
                         autoComplete="username"
                         placeholder="admin"
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
+                        value={username}
+                        onChange={(event) => setUsername(event.target.value)}
                         required
                       />
                     </label>
@@ -126,8 +217,29 @@ function App() {
                       />
                     </label>
 
-                    <button type="submit" className="login-submit">
-                      Prisijungti
+                    <button
+                      type="submit"
+                      className="login-submit"
+                      disabled={isAuthenticating}
+                    >
+                      {isAuthenticating
+                        ? "Prašome palaukti..."
+                        : isRegistering
+                          ? "Sukurti paskyrą"
+                          : "Prisijungti"}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="auth-mode-toggle"
+                      onClick={() => {
+                        setIsRegistering((currentValue) => !currentValue);
+                        setLoginError("");
+                      }}
+                    >
+                      {isRegistering
+                        ? "Jau turite paskyrą? Prisijunkite"
+                        : "Neturite paskyros? Sukurkite ją"}
                     </button>
 
                     {loginError && (
@@ -152,9 +264,15 @@ function App() {
                   </p>
                 </section>
 
+                {apiError && (
+                  <p className="login-error" role="alert">
+                    {apiError}
+                  </p>
+                )}
+
                 <TaskList
                   tasks={tasks}
-                  loading={false}
+                  loading={tasksLoading}
                   onStatusChange={handleTaskStatusChange}
                   onDeadlineChange={handleTaskDeadlineChange}
                 />
@@ -168,7 +286,9 @@ function App() {
         </>
       )}
 
-      {activePage === "profile" && <Profile user={user} tasks={tasks} />}
+      {activePage === "profile" && user && (
+        <Profile user={user} tasks={tasks} />
+      )}
     </>
   );
 }
